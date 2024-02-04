@@ -1,0 +1,222 @@
+### Cyclistic_Exercise_Full_Year_Analysis ###
+
+# This code is for the "Cyclistic" case study from the Google Data Analytics Certificate.  
+# It’s originally based on the case study "'Sophisticated, Clear, and Polished’: Divvy and Data Visualization" 
+# written by Kevin Hartman (found here: https://artscience.blog/home/divvy-dataviz-case-study). 
+# We will be using the Divvy dataset for the case study. The purpose of this script is to consolidate downloaded 
+# Divvy data into a single dataframe and then conduct simple analysis to help answer the key question: 
+# “In what ways do members and casual riders use Divvy bikes differently?”
+
+
+### Install required packages
+# tidyverse for data import and wrangling
+library(tidyverse)
+
+# libridate for date functions
+library(lubridate)
+
+# ggplot for visualization
+library(ggplot2)
+###
+
+# Uploading the data
+q2_2019 <- read_csv("Divvy_Trips_2019_Q2.csv")
+q3_2019 <- read.csv("Divvy_Trips_2019_Q3.csv")
+q4_2019 <- read.csv("Divvy_Trips_2019_Q4.csv")
+q1_2020 <- read.csv("Divvy_Trips_2020_Q1.csv")
+
+# Comparing column names in preparation for merging into a single data frame
+colnames(q3_2019)
+colnames(q4_2019)
+colnames(q2_2019)
+colnames(q1_2020)
+
+# Renaming the columns to match with q1_2020 (since it has the new table format that will be used going forward)
+
+(q2_2019 <- rename(q2_2019 
+                   ,ride_id = "01 - Rental Details Rental ID"
+                   ,rideable_type = "01 - Rental Details Bike ID"
+                   ,started_at = "01 - Rental Details Local Start Time"
+                   ,ended_at = "01 - Rental Details Local End Time"
+                   ,start_station_name = "03 - Rental Start Station Name"
+                   ,end_station_name = "02 - Rental End Station Name"
+                   ,end_station_id = "02 - Rental End Station ID"
+                   ,start_station_id = "03 - Rental Start Station ID"
+                   ,member_casual = "User Type"))
+
+(q3_2019 <- rename(q3_2019
+                   ,ride_id = trip_id
+                   ,rideable_type = bikeid
+                   ,started_at = start_time
+                   ,ended_at = end_time
+                   ,start_station_name = from_station_name
+                   ,start_station_id = from_station_id
+                   ,end_station_name = to_station_name
+                   ,end_station_id = to_station_id
+                   ,member_casual = usertype))
+
+(q4_2019 <- rename(q4_2019
+                   ,ride_id = trip_id
+                   ,rideable_type = bikeid
+                   ,started_at = start_time
+                   ,ended_at = end_time
+                   ,start_station_name = from_station_name
+                   ,start_station_id = from_station_id
+                   ,end_station_name = to_station_name
+                   ,end_station_id = to_station_id
+                   ,member_casual = usertype))
+
+# Looking for incongruities in the data frames 
+
+str(q1_2020)
+str(q4_2019)
+str(q3_2019)
+str(q2_2019)
+
+# making the columns with the same name have the same data type
+
+q4_2019 <- mutate(q4_2019, ride_id = as.character(ride_id)
+                  ,rideable_type = as.character(rideable_type))
+
+q3_2019 <- mutate(q3_2019, ride_id = as.character(ride_id)
+                  ,rideable_type = as.character(rideable_type))
+
+q2_2019 <- mutate(q2_2019, ride_id = as.character(ride_id)
+                  ,rideable_type = as.character(rideable_type)
+                  ,started_at = as.character(started_at)
+                  ,ended_at = as.character(ended_at))
+
+# combining the smaller data frames into one big data frame
+
+all_trips <- bind_rows(q2_2019,q3_2019,q4_2019,q1_2020)
+
+# removing columns containing data that stopped being collected in 2020
+
+all_trips <- all_trips %>%
+  select(-c(start_lat, start_lng, end_lat, end_lng, birthyear, gender
+            , "01 - Rental Details Duration In Seconds Uncapped"
+            ,"05 - Member Details Member Birthday Year", "Member Gender","tripduration"))
+
+# observing the new data frame 
+
+colnames(all_trips) # List of all column names
+nrow(all_trips) # Shows how many rows are in the data frame
+dim(all_trips) # shows the dimensions of the data frame 
+head(all_trips) # shows the first 6 rows of the data frame
+str(all_trips) # shows list of columns and data types
+summary(all_trips) # statistical summary of the data
+
+### problems to fix
+# 1. To make the table up to date with the current nomenclature we will consolidate the member_casual column 
+# 2. Need to add some additional data to allow more opportunities to aggregate data
+# 3. For consistency, need to add a calculated field for length of the ride 
+# since q1_2020 did not contain the tripduration column
+# 4. There are negative values in the tripduration field for bikes the were out of circulation for quality control 
+# we will remove these
+
+## fixing problem 1 
+
+# looking at the values
+table(all_trips$member_casual)
+
+# renaming the values
+all_trips <- all_trips %>%
+  mutate(member_casual=recode(member_casual,"Subscriber"="member","Customer"="casual"))
+
+## fixing Problem 2
+
+# adding a "date column
+all_trips$date <- as.Date(all_trips$started_at)
+
+# adding a "month" column
+all_trips$month <- format(as.Date(all_trips$date),"%m")
+
+# adding a "day" column
+all_trips$day <- format(as.Date(all_trips$date),"%d")
+
+# adding a "year" column
+all_trips$year <- format(as.Date(all_trips$date),"%y")
+
+# adding a "day of the week column"
+all_trips$day_of_week <- format(as.Date(all_trips$date),"%a")
+
+## Fixing problem 3
+
+# changing the columns to datetime to be used for adding "ride length" column
+all_trips <- mutate(all_trips, ended_at = as_datetime(ended_at)
+                    ,started_at = as_datetime(started_at))
+
+# adding a "ride length" column using a calculation
+all_trips$ride_length <- difftime(all_trips$ended_at,all_trips$started_at)
+
+# checking the structure of the columns
+str(all_trips)
+
+# converting "ride_length" to numeric type so it can be used for calculations
+all_trips$ride_length <- as.numeric(as.character(all_trips$ride_length))
+
+# making sure the data type is numeric now
+is.numeric(all_trips$ride_length)
+
+## Fixing problem 4
+
+# we will create a new data frame that does not contain the "bad" data 
+all_trips_v2 <- all_trips[!(all_trips$start_station_name == "HQ QR"|all_trips$ride_length<0),]
+
+# checking for the "bad" data
+table(all_trips_v2$start_station_name == "HQ QR")
+
+### Starting Analysis
+
+# getting aggregates on "ride_length"
+summary(all_trips_v2$ride_length)
+
+# comparing members and casual riders
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = mean)
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = median)
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = max)
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = min)
+
+# looking at the average ride time by each day for member vs casual riders
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual + all_trips_v2$day_of_week, FUN = mean)
+
+# the days of the week are out of order, I will fix it here
+all_trips_v2$day_of_week <- ordered(all_trips_v2$day_of_week, levels=c("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"))
+
+# running the code again after ordering the days of the week correctly 
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual + all_trips_v2$day_of_week, FUN = mean)
+
+# analyzing rider data by type and weekday
+all_trips_v2 %>%
+  mutate(weekday = wday(started_at,label=TRUE)) %>%
+  group_by(member_casual,weekday) %>%
+  summarize(number_of_rides = n(),average_duration = mean(ride_length)) %>%
+  arrange(member_casual,weekday)
+## insight = casual members have less number of total rides but longer average durations
+
+# adding a visualization
+all_trips_v2 %>%
+  mutate(weekday = wday(started_at,label=TRUE)) %>%
+  group_by(member_casual,weekday) %>%
+  summarize(number_of_rides = n(),average_duration = mean(ride_length)) %>%
+  arrange(member_casual,weekday) %>%
+  ggplot(aes(x=weekday,y=number_of_rides,fill=member_casual))+geom_col(position = "dodge")
+## insight = there are more casual riders on Saturdays and Sundays
+
+# visualization for average duration
+all_trips_v2 %>%
+  mutate(weekday = wday(started_at,label=TRUE))%>%
+  group_by(member_casual,weekday)%>%
+  summarize(number_of_rides=n(),average_duration = mean(ride_length))%>%
+  arrange(member_casual,weekday)%>%
+  ggplot(aes(x=weekday,y=average_duration,fill=member_casual))+
+  geom_col(position = "dodge")
+# insight = casual rides last 3x longer than member rides
+
+## Exporting for further analysis
+
+# creating an aggregated table for further analysis
+counts <- aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual + all_trips_v2$day_of_week, FUN = mean)
+
+# exporting to a csv
+write.csv(counts,file = 'C:/Users/PC/Documents/avg_ride_length.csv')
